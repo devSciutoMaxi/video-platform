@@ -78,26 +78,7 @@ Backend de una plataforma de videos (inspirado en el cap. 14 de *System Design I
 
 ## 3. Diseño de alto nivel
 
-### 3.1 Estimaciones
-
-| Concepto | Cálculo | Resultado |
-|----------|---------|-----------|
-| Subidas (promedio) | 1 M / (30 × 86 400 s) | ≈ 0,4 /s (pico ×5 ≈ 2 /s) |
-| Reproducciones (promedio) | 100 M / 86 400 s | ≈ 1 160 /s (pico ×3 ≈ 3 500 /s) |
-| Búsquedas (supuesto 20 M/día) | 20 M / 86 400 s | ≈ 230 /s |
-| Storage nuevo | 1 M × 100 MB | ≈ 100 TB/mes ≈ 1,2 PB/año (una sola resolución) |
-| Egress (30 MB vistos por reproducción) | 100 M × 30 MB | ≈ 3 PB/día ≈ 35 GB/s ≈ 280 Gbps |
-| Tabla `videos` | 12 M filas/año × ~1 KB | ≈ 12 GB/año |
-| Tabla `user_favorites` | 10 M usuarios × 50 × ~100 B (con índice) | ≈ 50 GB |
-| Eventos de vista | ~1 160 /s | ~1 160 UPDATE/s (en la cola, ya fuera de la request) |
-
-**Qué dicen los números:**
-- El **egress** (≈ 3 PB/día) es el costo dominante y justifica un **CDN**: el origen (S3) solo ve los *cache miss*.
-- La **metadata es chica** (decenas de GB): una instancia de PostgreSQL con réplicas de lectura alcanza por mucho tiempo.
-- El **QPS de escritura de vistas** (~1 200/s sobre muy pocas filas calientes) es el punto que justifica la cola: la request solo publica un evento.
-- Las **subidas son poco frecuentes** (~0,4–2 /s): el cuello de botella son los bytes, no las requests, y por eso la subida va directo a S3.
-
-### 3.2 Arquitectura
+### 3.1 Arquitectura
 
 ```mermaid
 flowchart LR
@@ -136,7 +117,7 @@ flowchart LR
 
 El API y los dos consumers viven en el mismo servicio (se pueden separar sin cambiar el diseño): los consumers son beans con `@Scheduled` y long polling.
 
-### 3.3 Flujo de vistas
+### 3.2 Flujo de vistas
 
 ```
 POST /videos/{id}/views → 202 → SQS video-viewed → consumer (un mensaje a la vez, idempotente) → UPDATE views = views + 1
