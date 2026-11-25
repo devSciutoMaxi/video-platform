@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: video-platform
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/videos}
+    username: ${DB_USER:videos}
+    password: ${DB_PASSWORD:videos}
+  flyway:
+    enabled: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      # El esquema lo gestiona Flyway; Hibernate no crea ni modifica tablas.
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  task:
+    scheduling:
+      pool:
+        size: 4
+  data:
+    web:
+      pageable:
+        default-page-size: 20
+        max-page-size: 50
+
+server:
+  port: 8080
+
+app:
+  # Base de la URL pública con la que se sirve el contenido. En producción: dominio de CloudFront.
+  # En local (LocalStack con path-style): http://localhost:4566/<bucket>
+  cdn-base-url: ${CDN_BASE_URL:http://localhost:4566/video-bucket}
+  max-video-size-bytes: 2147483648 # 2 GB
+  allowed-content-types:
+    - video/mp4
+    - video/webm
+    - video/quicktime
+  presign-expiry: 15m
+  pending-ttl: 24h
+  aws:
+    region: ${AWS_REGION:us-east-1}
+    # Vacío => endpoint real de AWS. En local apunta a LocalStack.
+    endpoint: ${AWS_ENDPOINT:http://localhost:4566}
+    access-key: ${AWS_ACCESS_KEY_ID:test}
+    secret-key: ${AWS_SECRET_ACCESS_KEY:test}
+    bucket: ${VIDEO_BUCKET:video-bucket}
+    # true: crea bucket, colas, DLQ y la notificación S3 -> SQS al arrancar (útil en local/tests).
+    # false: asume que la infraestructura ya existe (producción, vía IaC).
+    provision: ${AWS_PROVISION:true}
+  queues:
+    uploaded: video-uploaded
+    uploaded-dlq: video-uploaded-dlq
+    viewed: video-viewed
+    viewed-dlq: video-viewed-dlq
+    max-receive-count: 3
+    visibility-timeout-seconds: 30
+  messaging:
+    pollers-enabled: true
+    poll-interval-ms: 500
+    wait-time-seconds: 2

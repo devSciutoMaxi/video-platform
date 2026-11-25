@@ -1,0 +1,432 @@
+{
+  "info": {
+    "name": "Video Platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Flujo: 1 crear -> 2 reintento -> 3 subir a S3 -> 4 detalle (hasta READY) -> 5 buscar -> 6 view -> 7 favoritos. Swagger: {{baseUrl}}/swagger-ui.html"
+  },
+  "item": [
+    {
+      "name": "Flujo principal",
+      "item": [
+        {
+          "name": "1. Crear video (obtiene URL de subida)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/videos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Mi video\",\n  \"description\": \"Demo del challenge\",\n  \"fileName\": \"demo.mp4\",\n  \"contentType\": \"video/mp4\",\n  \"sizeBytes\": {{sizeBytes}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"idempotencyKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", function () { pm.response.to.have.status(201); });",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set(\"videoId\", j.videoId);",
+                  "pm.collectionVariables.set(\"uploadUrl\", j.upload.url);",
+                  "pm.test(\"status PENDING\", function () { pm.expect(j.status).to.eql(\"PENDING\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Reintento con la misma Idempotency-Key (200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/videos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Mi video\",\n  \"description\": \"Demo del challenge\",\n  \"fileName\": \"demo.mp4\",\n  \"contentType\": \"video/mp4\",\n  \"sizeBytes\": {{sizeBytes}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"mismo videoId\", function () { pm.expect(pm.response.json().videoId).to.eql(pm.collectionVariables.get(\"videoId\")); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Subir archivo a S3 (PUT prefirmado)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "video/mp4"
+              }
+            ],
+            "url": "{{uploadUrl}}",
+            "body": {
+              "mode": "file",
+              "file": {}
+            },
+            "description": "En Body > binary eleg\u00ed un archivo cuyo tama\u00f1o en bytes sea EXACTAMENTE el valor de la variable sizeBytes (o ajust\u00e1 sizeBytes al tama\u00f1o real antes del paso 1). Content-Type debe ser el declarado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"S3 respondi\u00f3 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Detalle del video (repetir hasta READY)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/videos/{{videoId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"tiene status\", function () { pm.expect(pm.response.json().status).to.be.oneOf([\"PENDING\",\"READY\",\"FAILED\"]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Buscar videos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/videos/search?q=mi&page=0&size=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Registrar reproducci\u00f3n (202)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/videos/{{videoId}}/views"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 202\", function () { pm.response.to.have.status(202); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Favoritos",
+      "item": [
+        {
+          "name": "7a. Agregar a favoritos (204)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users/me/favorites/{{videoId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7b. Listar favoritos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users/me/favorites?page=0&size=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7c. Quitar de favoritos (204)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users/me/favorites/{{videoId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Casos de error",
+      "item": [
+        {
+          "name": "Sin Idempotency-Key (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/videos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"title\":\"x\",\"fileName\":\"a.mp4\",\"contentType\":\"video/mp4\",\"sizeBytes\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Content-type no permitido (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/videos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"title\":\"x\",\"fileName\":\"a.pdf\",\"contentType\":\"application/pdf\",\"sizeBytes\":1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Misma clave, otro payload (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/videos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"title\":\"OTRO TITULO\",\"fileName\":\"otro.mp4\",\"contentType\":\"video/mp4\",\"sizeBytes\":2000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", function () { pm.response.to.have.status(409); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle como otro usuario (PENDING => 404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{otherUserId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/videos/{{videoId}}"
+          },
+          "event": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "userId",
+      "value": "user-1"
+    },
+    {
+      "key": "otherUserId",
+      "value": "user-2"
+    },
+    {
+      "key": "sizeBytes",
+      "value": "1048576"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "videoId",
+      "value": ""
+    },
+    {
+      "key": "uploadUrl",
+      "value": ""
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: videos
+      POSTGRES_USER: videos
+      POSTGRES_PASSWORD: videos
+    ports:
+      - "5433:5432"  # 5433 en el host para no chocar con un Postgres local en 5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U videos -d videos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Se fija la versión 3.8.1 (community, no requiere token).
+  localstack:
+    image: localstack/localstack:3.8.1
+    environment:
+      SERVICES: s3,sqs
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"s3\": \"available\"'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
